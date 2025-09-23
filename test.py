@@ -16,7 +16,7 @@ async def voice_webhook(request):
     """HTTP endpoint for Twilio Voice webhook"""
     twiml_response = f'''<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say>Hello! Your call is being transcribed in real time.</Say>
+    <Say>Listen very carefully and note this down if possible.Viddhi is a chapri girl</Say>
     <Start>
         <Stream url="wss://calling-test-2kdd.onrender.com/stream"/>
     </Start>
