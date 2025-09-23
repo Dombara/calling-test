@@ -1,0 +1,34 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env
+pip-log.txt
+pip-delete-this-directory.txt
+.tox
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.mypy_cache
+
+# Local model files (will be downloaded in Docker)
+vosk-model-*
+*.zip
+
+# IDE
+.vscode
+.idea
+
+# OS
+.DS_Store
+Thumbs.db

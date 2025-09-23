@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: twilio-speech-recognition
+    env: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: PORT
+        value: 5000
+      - key: PYTHONUNBUFFERED
+        value: 1
+    healthCheckPath: /
+    buildCommand: ""
+    startCommand: "python test.py"
