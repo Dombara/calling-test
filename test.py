@@ -8,69 +8,97 @@ import aiohttp_cors
 import aiohttp
 from datetime import datetime
 
-# Exotel API Configuration
-EXOTEL_API_KEY = os.getenv("EXOTEL_API_KEY", "7a06f96ecf082432a440058bca9900d10f7bbba7f8ff8391")
-EXOTEL_API_TOKEN = os.getenv("EXOTEL_API_TOKEN", "33f7a86fbca642eb3f4658ed10738577c489bea7b7307dce")
+# EnableX API Configuration
+ENABLEX_APP_ID = os.getenv("ENABLEX_APP_ID", "your_enablex_app_id")
+ENABLEX_APP_KEY = os.getenv("ENABLEX_APP_KEY", "your_enablex_app_key")
+ENABLEX_API_URL = os.getenv("ENABLEX_API_URL", "https://api.enablex.io/voice/v1")
 
 # Load Vosk model
 model = vosk.Model("vosk-model-small-en-us-0.15")
 rec = vosk.KaldiRecognizer(model, 8000)
 
-print("Exotel API configured")
-print(f"API Key: {EXOTEL_API_KEY[:10]}...")
-print(f"API Token: {EXOTEL_API_TOKEN[:10]}...")
+print("EnableX API configured")
+print(f"App ID: {ENABLEX_APP_ID}")
+print(f"App Key: {ENABLEX_APP_KEY[:10]}..." if len(ENABLEX_APP_KEY) > 10 else "Not configured")
 
 async def voice_webhook(request):
-    """HTTP endpoint for Exotel Voice webhook"""
-    data = await request.post()
+    """HTTP endpoint for EnableX Voice webhook"""
+    try:
+        data = await request.json()
+    except:
+        data = await request.post()
     
-    call_sid = data.get('CallSid', 'Unknown')
-    caller_number = data.get('From', 'Unknown')
-    called_number = data.get('To', 'Unknown')
+    call_id = data.get('call_id', data.get('uuid', 'Unknown'))
+    caller_number = data.get('from', data.get('caller_id', 'Unknown'))
+    called_number = data.get('to', data.get('called_id', 'Unknown'))
+    event = data.get('event', 'incoming')
     
-    print(f"\nIncoming call from {caller_number} to {called_number} (Call ID: {call_sid})")
+    print(f"\nEnableX Event: {event}")
+    print(f"Call from {caller_number} to {called_number} (Call ID: {call_id})")
     
-    exotel_response = f'''<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Say>Hello! Your call is being recorded and will be transcribed.</Say>
-    <Record action="https://calling-test-2kdd.onrender.com/recording" 
-            method="POST" 
-            maxLength="3600" 
-            finishOnKey="#"
-            recordSession="true">
-    </Record>
-    <Say>Thank you for your call. Goodbye!</Say>
-</Response>'''
+    # EnableX uses JSON responses with actions
+    enablex_response = {
+        "action": [
+            {
+                "type": "play",
+                "text": "Hello! Your call is being recorded and will be transcribed.",
+                "voice": "female",
+                "language": "en-US"
+            },
+            {
+                "type": "record",
+                "max_duration": 3600,
+                "timeout": 10,
+                "trim_silence": True,
+                "format": "wav",
+                "recording_url": "https://calling-test-2kdd.onrender.com/recording"
+            },
+            {
+                "type": "play",
+                "text": "Thank you for your call. Goodbye.",
+                "voice": "female",
+                "language": "en-US"
+            },
+            {
+                "type": "hangup"
+            }
+        ]
+    }
     
-    return web.Response(text=exotel_response, content_type='text/xml')
+    return web.json_response(enablex_response)
 
 async def recording_webhook(request):
-    """Handle recording completion from Exotel"""
-    data = await request.post()
+    """Handle recording completion from EnableX"""
+    try:
+        data = await request.json()
+    except:
+        data = await request.post()
     
-    call_sid = data.get('CallSid', 'Unknown')
-    recording_url = data.get('RecordingUrl', '')
-    recording_duration = data.get('RecordingDuration', '0')
+    call_id = data.get('call_id', data.get('uuid', 'Unknown'))
+    recording_url = data.get('recording_url', data.get('url', ''))
+    recording_duration = data.get('duration', data.get('recording_duration', '0'))
     
-    print(f"\nRecording completed for Call ID: {call_sid}")
+    print(f"\nEnableX recording completed for Call ID: {call_id}")
     print(f"Duration: {recording_duration} seconds")
     print(f"Recording URL: {recording_url}")
     
     if recording_url:
-        asyncio.create_task(process_recording(recording_url, call_sid))
+        asyncio.create_task(process_recording(recording_url, call_id))
     
-    return web.Response(text='<?xml version="1.0" encoding="UTF-8"?><Response></Response>', 
-                       content_type='text/xml')
+    return web.json_response({"status": "ok", "message": "Recording received"})
 
 async def process_recording(recording_url, call_sid):
     """Download and process the recorded audio file"""
     print(f"Processing recording for Call ID: {call_sid}")
     
     try:
-        auth = BasicAuth(EXOTEL_API_KEY, EXOTEL_API_TOKEN)
+        # EnableX authentication using App ID and App Key
+        headers = {
+            "Authorization": f"Basic {base64.b64encode(f'{ENABLEX_APP_ID}:{ENABLEX_APP_KEY}'.encode()).decode()}"
+        }
         
         async with aiohttp.ClientSession() as session:
-            async with session.get(recording_url, auth=auth) as response:
+            async with session.get(recording_url, headers=headers) as response:
                 if response.status == 200:
                     audio_data = await response.read()
                     print(f"Downloaded {len(audio_data)} bytes")
@@ -134,7 +162,12 @@ async def transcribe_audio_file(audio_file_path, call_sid):
 
 async def health_check(request):
     """Health check endpoint"""
-    return web.json_response({"status": "running", "service": "Exotel Speech Recognition"})
+    return web.json_response({
+        "status": "running", 
+        "service": "EnableX Speech Recognition Server",
+        "vosk_model": "vosk-model-small-en-us-0.15",
+        "enablex_configured": bool(ENABLEX_APP_ID and ENABLEX_APP_KEY)
+    })
 
 async def websocket_handler(request):
     """WebSocket handler for Twilio Media Streams"""
@@ -196,6 +229,8 @@ async def main():
     # Add routes
     app.router.add_get('/', health_check)
     app.router.add_post('/voice', voice_webhook)
+    app.router.add_post('/webhook', voice_webhook)
+    app.router.add_post('/event', voice_webhook)
     app.router.add_post('/recording', recording_webhook)
     app.router.add_get('/stream', websocket_handler)
     
@@ -203,9 +238,11 @@ async def main():
     for route in list(app.router.routes()):
         cors.add(route)
     
-    print("Exotel Speech Recognition Server Starting")
+    print("EnableX Speech Recognition Server Starting")
     print(f"Port: {port}")
+    print(f"Main webhook: https://calling-test-2kdd.onrender.com/webhook")
     print(f"Voice webhook: https://calling-test-2kdd.onrender.com/voice")
+    print(f"Event webhook: https://calling-test-2kdd.onrender.com/event")
     print(f"Recording webhook: https://calling-test-2kdd.onrender.com/recording")
     print("Server ready!")
     
