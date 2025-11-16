@@ -8,97 +8,81 @@ import aiohttp_cors
 import aiohttp
 from datetime import datetime
 
-# EnableX API Configuration
-ENABLEX_APP_ID = os.getenv("ENABLEX_APP_ID", "your_enablex_app_id")
-ENABLEX_APP_KEY = os.getenv("ENABLEX_APP_KEY", "your_enablex_app_key")
-ENABLEX_API_URL = os.getenv("ENABLEX_API_URL", "https://api.enablex.io/voice/v1")
+# Exotel API Configuration
+EXOTEL_SID = os.getenv("EXOTEL_SID", "cbc161")
+EXOTEL_API_KEY = os.getenv("EXOTEL_API_KEY", "e7786f85cb027a24d88347d91e41f01670e012c7d48fad41")
+EXOTEL_API_TOKEN = os.getenv("EXOTEL_API_TOKEN", "71f1e40ed0c0cdf89fa780b445bcdaae89217d3670993b3b")
+EXOTEL_SUBDOMAIN = os.getenv("EXOTEL_SUBDOMAIN", "api.exotel.com")
 
 # Load Vosk model
 model = vosk.Model("vosk-model-small-en-us-0.15")
 rec = vosk.KaldiRecognizer(model, 8000)
 
-print("EnableX API configured")
-print(f"App ID: {ENABLEX_APP_ID}")
-print(f"App Key: {ENABLEX_APP_KEY[:10]}..." if len(ENABLEX_APP_KEY) > 10 else "Not configured")
+print("Exotel API configured")
+print(f"Account SID: {EXOTEL_SID}")
+print(f"API Key: {EXOTEL_API_KEY[:10]}...")
+print(f"API Token: {EXOTEL_API_TOKEN[:10]}...")
 
 async def voice_webhook(request):
-    """HTTP endpoint for EnableX Voice webhook"""
+    """HTTP endpoint for Exotel Voice webhook"""
     try:
-        data = await request.json()
-    except:
         data = await request.post()
+    except:
+        data = await request.json()
     
-    call_id = data.get('call_id', data.get('uuid', 'Unknown'))
-    caller_number = data.get('from', data.get('caller_id', 'Unknown'))
-    called_number = data.get('to', data.get('called_id', 'Unknown'))
-    event = data.get('event', 'incoming')
+    call_sid = data.get('CallSid', data.get('call_id', 'Unknown'))
+    caller_number = data.get('From', data.get('caller_id', 'Unknown'))
+    called_number = data.get('To', data.get('called_id', 'Unknown'))
+    call_status = data.get('CallStatus', 'in-progress')
     
-    print(f"\nEnableX Event: {event}")
-    print(f"Call from {caller_number} to {called_number} (Call ID: {call_id})")
+    print(f"\nExotel Call: {call_status}")
+    print(f"Call from {caller_number} to {called_number} (Call SID: {call_sid})")
     
-    # EnableX uses JSON responses with actions
-    enablex_response = {
-        "action": [
-            {
-                "type": "play",
-                "text": "Hello! Your call is being recorded and will be transcribed.",
-                "voice": "female",
-                "language": "en-US"
-            },
-            {
-                "type": "record",
-                "max_duration": 3600,
-                "timeout": 10,
-                "trim_silence": True,
-                "format": "wav",
-                "recording_url": "https://calling-test-2kdd.onrender.com/recording"
-            },
-            {
-                "type": "play",
-                "text": "Thank you for your call. Goodbye.",
-                "voice": "female",
-                "language": "en-US"
-            },
-            {
-                "type": "hangup"
-            }
-        ]
-    }
+    # Exotel uses XML responses
+    exotel_response = f'''<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>Hello! Your call is being recorded and will be transcribed.</Say>
+    <Record action="https://calling-test-2kdd.onrender.com/recording" 
+            method="POST" 
+            maxLength="3600" 
+            finishOnKey="#"
+            recordSession="true">
+    </Record>
+    <Say>Thank you for your call. Goodbye!</Say>
+</Response>'''
     
-    return web.json_response(enablex_response)
+    return web.Response(text=exotel_response, content_type='text/xml')
 
 async def recording_webhook(request):
-    """Handle recording completion from EnableX"""
+    """Handle recording completion from Exotel"""
     try:
-        data = await request.json()
-    except:
         data = await request.post()
+    except:
+        data = await request.json()
     
-    call_id = data.get('call_id', data.get('uuid', 'Unknown'))
-    recording_url = data.get('recording_url', data.get('url', ''))
-    recording_duration = data.get('duration', data.get('recording_duration', '0'))
+    call_sid = data.get('CallSid', data.get('call_id', 'Unknown'))
+    recording_url = data.get('RecordingUrl', data.get('recording_url', ''))
+    recording_duration = data.get('RecordingDuration', data.get('duration', '0'))
     
-    print(f"\nEnableX recording completed for Call ID: {call_id}")
+    print(f"\nExotel recording completed for Call SID: {call_sid}")
     print(f"Duration: {recording_duration} seconds")
     print(f"Recording URL: {recording_url}")
     
     if recording_url:
-        asyncio.create_task(process_recording(recording_url, call_id))
+        asyncio.create_task(process_recording(recording_url, call_sid))
     
-    return web.json_response({"status": "ok", "message": "Recording received"})
+    return web.Response(text='<?xml version="1.0" encoding="UTF-8"?><Response></Response>', content_type='text/xml')
 
 async def process_recording(recording_url, call_sid):
     """Download and process the recorded audio file"""
-    print(f"Processing recording for Call ID: {call_sid}")
+    print(f"Processing recording for Call SID: {call_sid}")
     
     try:
-        # EnableX authentication using App ID and App Key
-        headers = {
-            "Authorization": f"Basic {base64.b64encode(f'{ENABLEX_APP_ID}:{ENABLEX_APP_KEY}'.encode()).decode()}"
-        }
+        # Exotel authentication using BasicAuth
+        auth = BasicAuth(EXOTEL_API_KEY, EXOTEL_API_TOKEN)
         
         async with aiohttp.ClientSession() as session:
-            async with session.get(recording_url, headers=headers) as response:
+            async with session.get(recording_url, auth=auth) as response:
                 if response.status == 200:
                     audio_data = await response.read()
                     print(f"Downloaded {len(audio_data)} bytes")
@@ -164,7 +148,8 @@ async def health_check(request):
     """Health check endpoint"""
     return web.json_response({
         "status": "running", 
-        "service": "EnableX Speech Recognition Server",
+        "service": "Exotel Speech Recognition Server",
+        "account_sid": EXOTEL_SID,
         "vosk_model": "vosk-model-small-en-us-0.15",
         "enablex_configured": bool(ENABLEX_APP_ID and ENABLEX_APP_KEY)
     })
@@ -238,7 +223,7 @@ async def main():
     for route in list(app.router.routes()):
         cors.add(route)
     
-    print("EnableX Speech Recognition Server Starting")
+    print("Exotel Speech Recognition Server Starting")
     print(f"Port: {port}")
     print(f"Main webhook: https://calling-test-2kdd.onrender.com/webhook")
     print(f"Voice webhook: https://calling-test-2kdd.onrender.com/voice")
