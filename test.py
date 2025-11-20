@@ -41,7 +41,7 @@ async def voice_webhook(request):
     # Exotel uses XML responses
     exotel_response = f'''<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say>Hello! Your call is being recorded and will be transcribed.</Say>
+    <Say>Hello! Welcome to our Appointment Desk. How can i help you?</Say>
     <Record action="https://calling-test-2kdd.onrender.com/recording" 
             method="POST" 
             maxLength="3600" 
