@@ -155,11 +155,11 @@ async def health_check(request):
     })
 
 async def websocket_handler(request):
-    """WebSocket handler for Twilio Media Streams"""
+    """WebSocket handler for Exotel Media Streams"""
     ws = web.WebSocketResponse()
     await ws.prepare(request)
     
-    print("🔗 Twilio Media Stream connected...")
+    print("🔗 Exotel Media Stream connected...")
 
     async for msg in ws:
         if msg.type == WSMsgType.TEXT:
@@ -168,7 +168,7 @@ async def websocket_handler(request):
                 
                 # Only care about audio packets
                 if data["event"] == "media":
-                    # Twilio sends base64 audio (mulaw PCM, 8kHz)
+                    # Exotel sends base64 audio (mulaw PCM, 8kHz)
                     audio_chunk = base64.b64decode(data["media"]["payload"])
                     
                     if rec.AcceptWaveform(audio_chunk):
